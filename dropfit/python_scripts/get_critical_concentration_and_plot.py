@@ -4,7 +4,7 @@ import sys
 import json
 import argparse
 import pandas as pd
-from helpers import get_valid_column_indexes, linear_function,get_column_kth_moment,round_mean_and_std, remove_empty_columns, log_message
+from helpers import get_valid_column_indexes, linear_function,get_column_kth_moment,round_mean_and_error, remove_empty_columns, log_message
 import numpy as np
 import matplotlib.pyplot as plt
 import heapq
@@ -140,7 +140,7 @@ def plot_and_calculate_critical_concentration(plot_data, k_to_consider, director
         log_message(debug_file, f"DEBUG (plot_and_calculate_critical_concentration): Critical concentration mean: {str(critical_concentration_mean)}")
         log_message(debug_file, f"DEBUG (plot_and_calculate_critical_concentration): Critical concentration std: {str(critical_concentration_std)}")
 
-    ax.errorbar(critical_concentration_mean, 0, xerr=critical_concentration_std, fmt='o', color='red')
+    ax.errorbar(critical_concentration_mean, 0, xerr=critical_concentration_std, fmt='o', color='red', markersize=12)
     ax.legend(loc='lower left', fontsize=16)
     ax.set_title("Estimation of the critical concentration", fontsize=22)
     ax.set_xlabel(r'$\rho $', fontsize=20)
@@ -157,9 +157,13 @@ def plot_and_calculate_critical_concentration(plot_data, k_to_consider, director
         log_message(debug_file, f"DEBUG (plot_and_calculate_critical_concentration): Finished plot settings")
 
     # Roud the critical concentration and std (taking significant figures of std into the account). Prepare text expression for the mean +/- std
-    rounded_mean_critical_concentration, rounded_std_critical_concentration = round_mean_and_std(critical_concentration_mean, critical_concentration_std)
-    critical_concentration_expression = str(rounded_mean_critical_concentration) + ' ± ' + str(rounded_std_critical_concentration)
-
+    rounded_mean_critical_concentration, rounded_std_critical_concentration = round_mean_and_error(critical_concentration_mean, critical_concentration_std)
+    
+    # If std is a whole number, display it as a whole number without significant figures (ie 30 instead of 30.0) to not confuse the user
+    if rounded_std_critical_concentration == int(rounded_std_critical_concentration):
+        critical_concentration_expression = str(int(rounded_mean_critical_concentration)) + ' ± ' + str(int(rounded_std_critical_concentration))
+    else: 
+        critical_concentration_expression = str(rounded_mean_critical_concentration) + ' ± ' + str(rounded_std_critical_concentration)
     if debug_file:
         log_message(debug_file, f"DEBUG (plot_and_calculate_critical_concentration): Critical concentration expression: {str(critical_concentration_expression)}")
 
@@ -181,14 +185,14 @@ def plot_and_calculate_critical_concentration(plot_data, k_to_consider, director
         except Exception as e:
             if debug_file:
                 log_message(debug_file, f"DEBUG (plot_and_calculate_critical_concentration): Error saving plot figure with exception {e}")
-            return "Error saving the plot figure, try again later,please"
+            return "","","", "Error saving the plot figure, try again later, please."
 
-        return ""
+        return critical_concentration_expression, rounded_mean_critical_concentration, rounded_std_critical_concentration, ""
 
     else:
         if debug_file:
             log_message(debug_file, f"DEBUG (plot_and_calculate_critical_concentration): Error with critical concentration calculation. The result {critical_concentration_expression} does not seem plausible. Please, check if your file contains the right values and has the right format.")
-        return f"Error with critical concentration calculation. The result {critical_concentration_expression} does not seem plausible. Please, check if your file contains the right values and has the right format (as per the example)."
+        return "","","", f"Error with critical concentration calculation. The result {critical_concentration_expression} does not seem plausible. Please, check if your file contains the right values and has the right format (as per the example)."
 
 def run_calculation(data_path, directory_to_store, out_id, do_k_optim=True, ks=np.array([]), concentrations_to_omit = np.array([]), debug_file=""):
     try:
@@ -201,6 +205,10 @@ def run_calculation(data_path, directory_to_store, out_id, do_k_optim=True, ks=n
     if debug_file:
         log_message(debug_file, f"DEBUG (run_calculation): csv file loaded, with {str(len(data))} rows")
 
+    # Remove nonnumeric values and remove <=0 
+    data = data.apply(pd.to_numeric, errors='coerce')
+    data = data[data>0]
+    # Remove empty columns - this should take care of also columns that might have have negative/all zero values
     data = remove_empty_columns(data)
     if data.empty:
         return f"Error with the CSV file. There are no valid concentration data. Please, check if your file has the right structure and contains right values."
@@ -208,7 +216,7 @@ def run_calculation(data_path, directory_to_store, out_id, do_k_optim=True, ks=n
     try:
         if debug_file:
             log_message(debug_file, "DEBUG (run_calculation): Starting run_calculation core eval")
-        
+
         # Get valid column indexes for corresponding concentrations from the loaded data. 
         # Get also concentrations usage (which concentrations are being used for calculations)
         concentrations_table_metadata, concentrations_usage = get_valid_column_indexes(data, concentrations_to_omit)
@@ -259,7 +267,7 @@ def run_calculation(data_path, directory_to_store, out_id, do_k_optim=True, ks=n
             log_message(debug_file, f"DEBUG (run_calculation): k to consider: {str(k_to_consider)}")
 
         # Plot and calculate critical concentration
-        error_output = plot_and_calculate_critical_concentration(plot_data, k_to_consider, directory_to_store, out_id, debug_file)
+        critical_concentration_expression, critical_concentration_mean, critical_concentration_std ,error_output = plot_and_calculate_critical_concentration(plot_data, k_to_consider, directory_to_store, out_id, debug_file)
 
         if error_output:
             if debug_file:
@@ -272,10 +280,16 @@ def run_calculation(data_path, directory_to_store, out_id, do_k_optim=True, ks=n
         # Return error if any other part of the code fails
         return f"Error during critical concentration calculation. Please, check if your file has the right structure and contains right values."
 
-    # Write the concentrations usage into file. Do this here after error checks to save up space in case the file is not used
-    # in the fronted due to errors.
-    with open(f"{directory_to_store}/{out_id}_concentration_usage.json", "w") as json_file:
-        json.dump(concentrations_usage, json_file)
+    results_and_metadata_for_frontend = {
+        "critical_concentration_expression": critical_concentration_expression,
+        "critical_concentration_mean": critical_concentration_mean,
+        "critical_concentration_std": critical_concentration_std,
+        "concentrations_usage": concentrations_usage,
+        "k_to_consider": k_to_consider
+    }
+
+    with open(f"{directory_to_store}/{out_id}_results_and_metadata_for_frontend.json", "w") as json_file:
+        json.dump(results_and_metadata_for_frontend, json_file, indent=2)
 
     # Return success (empty) message if everything is executed without errors
     return ""
