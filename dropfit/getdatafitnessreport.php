@@ -70,14 +70,20 @@ try {
         exit;
     }
 
-    if(!empty($_POST['concentrationsToOmit'])){
-        $concentrations_to_omit = array_keys(array_filter($_POST['concentrationsToOmit'], function($value) {
-            return $value === true;
-        }));
-        $concentrations_to_omit_string = implode(',', $concentrations_to_omit);
-        $concentrations_to_omit_append = " --concentrations_to_omit " . escapeshellarg($concentrations_to_omit_string) ;
+    if (!empty($_POST['concentrationsUsage'])) {
+        $usage = json_decode($_POST['concentrationsUsage'], true);
+    
+        if (is_array($usage)) {
+            $concentrations_to_omit = array_keys(array_filter($usage, function($value) {
+                return $value !== true;
+            }));
+            $concentrations_to_omit_string = implode(',', $concentrations_to_omit);
+            $concentrations_to_omit_append = " --concentrations_to_omit " . escapeshellarg($concentrations_to_omit_string);
+        } else {
+            $concentrations_to_omit_append = "";
+        }
     } else {
-        $concentrations_to_omit_append = " ";
+        $concentrations_to_omit_append = "";
     }
 
     # Execute the script to get the data fitness report

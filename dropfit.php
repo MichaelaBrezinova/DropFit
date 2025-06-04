@@ -629,7 +629,7 @@ check_user(0, $check_academic=0 ); // first variable 0/1 is debug, it echo to sc
                     dataToSend.append('criticalConcentration', criticalConcentrationToUse);
 
                     // Append concentration usage
-                    dataToSend.append('concentrationsUsage', concentrationsUsage);
+                    dataToSend.append('concentrationsUsage', JSON.stringify(concentrationsUsage));
                     // Append ks to use in the calculations
                     dataToSend.append('kToConsider',kToConsider);
 
