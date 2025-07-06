@@ -140,7 +140,7 @@ check_user(0, $check_academic=0 ); // first variable 0/1 is debug, it echo to sc
                         <img src="/concrete/uploaded_files/web_site_images/dropfit_after.svg" 
                             alt="After Image" class="header-image right">
                     </div>
-                    <p class="small text-muted align-items-center text-center justify-content-center">A tool for calculating concentration when phase separation occurs (critical concentration) from droplet data collected at concentrations below the critical concentration. See the original <a href="https://elifesciences.org/articles/94214" target="_blank"> paper</a> for more details.</p>
+                    <p class="small text-muted align-items-center text-center justify-content-center">A tool for calculating concentration when phase separation occurs (critical concentration) from droplet data collected at concentrations below the critical concentration. See the original <a href="https://elifesciences.org/articles/94214" target="_blank"> paper</a>, the DropFit <a href="https://www.sciencedirect.com/science/article/pii/S0022283625003602?via%3Dihub" target="_blank"> paper</a> or our <a href="https://docs.google.com/document/d/1uEcZJkTb3oZFkOtOvRY8i_0Jb93ceCwysiYo41CGtGQ/edit?usp=sharing" target="_blank"> user manual </a> for more details. The manual also contains walk-through of the main calculations behind the results as well as updates on changes made to the server. If your results do not look right and the data seems correct, please, contact us on <b>mb2462 [at] cam.ac.uk </b> </p>
                     <form id="concentrationCalculationForm" enctype="multipart/form-data">
                         <div class="d-block">
                             <h5>1. Choose a file *</h5>
@@ -152,7 +152,7 @@ check_user(0, $check_academic=0 ); // first variable 0/1 is debug, it echo to sc
                             <ul>
                                 <li>contain at least 3 different concentrations (The server will work also with only 2 concentrations, however, the results will most likely be very inaccurate.)</li>
                                 <li><strong>not</strong> contain concentrations above the critical concentration as the model would not apply in such cases.</li>
-                                <li>contain droplet sizes in rows with the corresponding concentration in the header (see the <a href="/available_downloads/example_dropfilt_input.csv" download>example file</a> for reference).</li>
+                                <li>contain droplet sizes in rows with the corresponding concentration in the header (see the <a href="/available_downloads/example_dropfilt_input.csv" download>example file</a> for reference). Each row should correspond to one data point.</li>
                                 <li>contain, if possible, replicate columns for concentrations (each should have the corresponding concentration in its header).</li>
                                 <li>be in <strong>csv</strong> format.</li>
                             </ul>
@@ -223,11 +223,11 @@ check_user(0, $check_academic=0 ); // first variable 0/1 is debug, it echo to sc
                             </div></div>
                         </div>
                         <!-- Uncomment when data report is active -->
-                        <!-- <div id="showDataReportButtonContainer" class="text-center p-3 flex-grow-1" style="display: none !important; background: transparent; border: none; box-shadow: none;">
+                        <div id="showDataReportButtonContainer" class="text-center p-3 flex-grow-1" style="display: none !important; background: transparent; border: none; box-shadow: none;">
                             <button type="button" class="btn btn-success text-white" id="showDataReportButton">
                                 Model Validation
                             </button>
-                        </div> -->
+                        </div>
                     </div>
                 </div>
                 <div class="col mb-4 d-flex align-items-stretch">
@@ -382,7 +382,7 @@ check_user(0, $check_academic=0 ); // first variable 0/1 is debug, it echo to sc
         <!-- Footer Section -->
         <footer class="fixed-bottom bg-light-transparent py-1">
             <div class="container text-center">
-                <p class="small text-muted mb-0">The calculator is based on the paper <a href="https://elifesciences.org/articles/94214" target="_blank">A scale-invariant log-normal droplet size distribution below the transition concentration for protein phase separation</a>.</p>
+                <p class="small text-muted mb-0">If you use this tool, please, cite  <a href="https://www.sciencedirect.com/science/article/pii/S0022283625003602?via%3Dihub" target="_blank">Brezinova, M., Fuxreiter, M. and Vendruscolo, M., 2025. DropFit: Determination of the Critical Concentration for Protein Liquid-Liquid Phase Separation. Journal of Molecular Biology, p.169294.</a>.</p>
             </div>
         </footer>
         <!-- End of Footer Section -->
@@ -426,9 +426,19 @@ check_user(0, $check_academic=0 ); // first variable 0/1 is debug, it echo to sc
 
                     // Empty containers
                     emptyResultsContainers();
+                    emptyDataReportResults();
+                    resetConcentrationChoiceForDataReportResults();
 
                     // Create formData object
                     var formData = new FormData(this);
+
+
+                    // errorMessage.empty().addClass('d-none');
+
+                    let wasDataFitnessReportContaineVisible = dataFitnessReportContainer.is(':visible');
+                    if(wasDataFitnessReportContaineVisible){
+                        dataFitnessReportContainer.hide();
+                    }
 
                     // AJAX request to call function to calculate the critical concentration
                     $.ajax({
@@ -676,7 +686,6 @@ check_user(0, $check_academic=0 ); // first variable 0/1 is debug, it echo to sc
 
 
                                 $("#criticalExponentsResults").html(criticalExponentsResultsValue);
-                                // updateCriticalExponentsCommentary(response.critical_exponents);
 
                                 // Show the container
                                 dataReportResults.show();
@@ -782,6 +791,13 @@ check_user(0, $check_academic=0 ); // first variable 0/1 is debug, it echo to sc
                     $('#concentrationsCollapsePlot').attr('src', "");
                     $('#phiCriticalExponentPlot').attr('src', "");
                     $('#alphaCriticalExponentPlot').attr('src', "");
+                }
+
+                function resetConcentrationChoiceForDataReportResults(){
+                    $('#dataFitnessReportCriticalConcentrationInput').val('');
+                    $('#autoCriticalConcentration').prop('checked', true);
+                    $('#manualCriticalConcentration').prop('checked', false);
+                    $('#dataFitnessReportCriticalConcentrationInput').prop('disabled', true);
                 }
 
                 // Hide spinners and display the new plots and value
