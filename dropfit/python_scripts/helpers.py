@@ -110,7 +110,7 @@ def get_valid_column_indexes(data, concentrations_to_omit =  np.array([])):
         if not column.startswith('Unnamed'):
             # This represents the concentration. We are querying the string before '.' because if the concentrations have replicates, the columns will have
             # suffixes to differentiate them 
-            column_prefix = float(column.split('.')[0]) 
+            column_prefix = float(column.split('_')[0]) 
 
             # Add column prefix (concentration) to the map of all valid concentrations. Indicate that is is not used yet (False value).
             if column_prefix not in all_valid_concentrations_usage.keys():
@@ -186,6 +186,8 @@ def remove_empty_columns(data):
 
 def do_similarity_check(data_to_check, max_cv=0.2):
     """Returns True if coefficient of variation is below threshold."""
+    if(len(data_to_check)<2):
+        return True
     mean = data_to_check.mean()
     std = data_to_check.std()
     if mean == 0:
@@ -196,6 +198,13 @@ def do_similarity_check(data_to_check, max_cv=0.2):
 def run_data_sanity_check(data, cleaned_data, concentrations_table_metadata):
     potential_warnings = []
     
+    has_notsuitable_columns = any(data.columns.str.startswith('NotSuitable'))
+    if has_notsuitable_columns:
+        potential_warnings.append('Data contained invalid concentrations that have been removed.')
+
+    data = data.loc[:, ~(
+        data.columns.str.startswith('Unnamed') | data.columns.str.startswith('NotSuitable')
+    )]
     # Convert all values to numeric, coercing errors to NaN
     data_without_nonnumeric = data.apply(pd.to_numeric, errors='coerce')
 
@@ -290,7 +299,7 @@ def get_phi_exponent_calculation_data(concentrations_table_metadata, data, criti
         k_plus_1th_moments = list(data.apply(lambda column: get_column_kth_moment(column, k=k+1), axis=0))
         # Calculate ratio of the moments, ie <s_(k+1)>/<s_k>
         
-        moment_ratios = [s_k_plus_1 / s_k if k != 0 else float('inf') for s_k_plus_1, s_k in zip(k_plus_1th_moments, kth_moments)]
+        moment_ratios = [s_k_plus_1 / s_k if s_k != 0 else float('inf') for s_k_plus_1, s_k in zip(k_plus_1th_moments, kth_moments)]
         if np.any(np.isinf(moment_ratios)):
             return {}, f"There was an error with calculating {k}th moment, most likely it is 0 which makes calculation of moment ratios impossible."
 
@@ -319,8 +328,8 @@ def get_phi_exponent_calculation_data(concentrations_table_metadata, data, criti
         y_std = np.array(plot_data[k]['y_std'])
         indices_to_replace = (y_std == 0) & (replicates_per_concentration == 1)
         if len(y_std[~indices_to_replace])!=0:
-            replacement_scaler = np.mean(y_std[~indices_to_replace]/np.array(plot_data[k]['y'])[~indices_to_replace])
-            y_std[indices_to_replace] = replacement_scaler * np.array(plot_data[k]['y'])[indices_to_replace]
+            replacement_scaler = np.mean(y_std[~indices_to_replace]/np.abs(np.array(plot_data[k]['y']))[~indices_to_replace])
+            y_std[indices_to_replace] = replacement_scaler * np.abs(np.array(plot_data[k]['y']))[indices_to_replace]
         # in case there are no concentrations with more replicates, set the y_st to 0.001 (small value)
         else:
             replacement_value = 0.001
@@ -391,8 +400,8 @@ def get_alpha_exponent_calculation_data(concentrations_table_metadata, data, cri
     y_std = np.array(plot_data['y_std'])
     indices_to_replace = (y_std == 0) & (replicates_per_concentration == 1)
     if len(y_std[~indices_to_replace])!=0:
-        replacement_scaler = np.mean(y_std[~indices_to_replace]/np.array(plot_data['y'])[~indices_to_replace])
-        y_std[indices_to_replace] = replacement_scaler * np.array(plot_data['y'])[indices_to_replace]
+        replacement_scaler = np.mean(y_std[~indices_to_replace]/np.abs(np.array(plot_data['y']))[~indices_to_replace])
+        y_std[indices_to_replace] = replacement_scaler * np.abs(np.array(plot_data['y']))[indices_to_replace]
     # in case there are no concentrations with more replicates, set the y_st to 0.001 (small value)
     else:
         replacement_value = 0.001
@@ -434,3 +443,23 @@ def get_alpha_exponent_calculation_data(concentrations_table_metadata, data, cri
     plot_data['intercept'] = intercept
 
     return plot_data, ""
+
+# Check if the string represents number, specifically positive number
+def is_positive_number(s):
+    try:
+        return float(s) > 0
+    except ValueError:
+        return False
+
+def rename_duplicate_columns(header):
+    seen = {}
+    renamed_header = []
+
+    for col in header:
+        if col not in seen:
+            seen[col] = 0
+            renamed_header.append(col)
+        else:
+            seen[col] += 1
+            renamed_header.append(f"{col}_COPY{seen[col]}")
+    return renamed_header

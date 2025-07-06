@@ -5,7 +5,7 @@ import json
 import argparse
 import math
 import pandas as pd
-from helpers import run_data_sanity_check, remove_empty_columns,get_valid_column_indexes, get_kde,get_histogram_data, get_phi_exponent_calculation_data, get_alpha_exponent_calculation_data, round_mean_and_error
+from helpers import run_data_sanity_check, remove_empty_columns,get_valid_column_indexes, get_kde,get_histogram_data, get_phi_exponent_calculation_data, get_alpha_exponent_calculation_data, round_mean_and_error, is_positive_number, rename_duplicate_columns
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes as i_a
@@ -188,7 +188,7 @@ def get_collapse_concentrations_plot(concentrations_table_metadata, cleaned_data
     plt.clf()
     return
 
-def get_alpha_critical_exponent(concentrations_table_metadata, data, critical_concentration, debug_file):
+def get_alpha_critical_exponent(concentrations_table_metadata, data, critical_concentration, directory_to_store, out_id, debug_file):
     plot_data, error = get_alpha_exponent_calculation_data(concentrations_table_metadata, data, critical_concentration)
     if error: 
         if debug_file:
@@ -241,7 +241,7 @@ def get_alpha_critical_exponent(concentrations_table_metadata, data, critical_co
             log_message(debug_file, f"DEBUG (get_alpha_critical_exponent): Calculated m: {plot_data['slope']} with m_std_err: {plot_data['slope_error']}.")
     return plot_data['slope'], plot_data['slope_error'], ""
 
-def get_phi_critical_exponent_calculation(concentrations_table_metadata, data, critical_concentration, ks, debug_file=""):
+def get_phi_critical_exponent(concentrations_table_metadata, data, critical_concentration, ks, directory_to_store, out_id, debug_file):
     plot_data, error = get_phi_exponent_calculation_data(concentrations_table_metadata, data, critical_concentration, ks)
     if error: 
         if debug_file:
@@ -294,14 +294,14 @@ def get_phi_critical_exponent_calculation(concentrations_table_metadata, data, c
     if any(x == 0 for x in slope_errors):
         mean_slope = np.mean(slopes)
         if debug_file:
-                log_message(debug_file, f"DEBUG (get_phi_critical_exponent_calculation): Output of phi calculation is - phi: {mean_slope}, phi_std_err: 0")
+                log_message(debug_file, f"DEBUG (get_phi_critical_exponent): Output of phi calculation is - phi: {mean_slope}, phi_std_err: 0")
         return mean_slope, 0, ""
     else:
         weights = 1 / np.square(slope_errors)
         weighted_mean_slope = np.average(slopes, weights=weights)
         weighted_std_error = np.sqrt(1 / np.sum(weights))
         if debug_file:
-                log_message(debug_file, f"DEBUG (get_phi_critical_exponent_calculation): Output of phi calculation is - phi: {weighted_mean_slope}, phi_std_err: {weighted_std_error}")
+                log_message(debug_file, f"DEBUG (get_phi_critical_exponent): Output of phi calculation is - phi: {weighted_mean_slope}, phi_std_err: {weighted_std_error}")
         return weighted_mean_slope, weighted_std_error, ""
 
 def run_calculation(data_path, directory_to_store, out_id, critical_concentration, ks, concentrations_to_omit = np.array([]), debug_file=""):
@@ -312,15 +312,40 @@ def run_calculation(data_path, directory_to_store, out_id, critical_concentratio
         # Return error if loading the CSV file fails
         return f"Error loading the CSV file. Please, check the format of your file."
 
+    if data.empty:
+        return f"Error with the CSV file. There are no valid concentration data. Please, check if your file has the right structure and contains right values."
+
     if debug_file:
         log_message(debug_file, f"DEBUG (run_calculation): csv file loaded, with {str(len(data))} rows")
 
+    # Load header separately to handle replicates (duplicate column names)
+    with open(data_path, 'r') as f:
+        header = f.readline().strip().split(',')
+    
+    header = [col if col.strip() != '' else 'Unnamed' for col in header]
+
+    # If the header entry (column) is not a number larger than 0, rename it to NotSuitable. All column entries should be numbers
+    # since they represent concentrations
+    header = [col if col == 'Unnamed' or is_positive_number(col) else 'NotSuitable' for col in header]
+
+    has_numeric_columns = any(col not in ['Unnamed', 'NotSuitable'] for col in header)
+    
+    if not has_numeric_columns:
+       return f"Error with the CSV file. There are no valid column headers - no numerical concentrations. Please, check if your file has the right structure and contains right values."
+   
+    header_with_duplicates_handled = rename_duplicate_columns(header)
+    data.columns = header_with_duplicates_handled
+    # Remove all unnamed columns
+    cleaned_data = data.loc[:, ~(
+        data.columns.str.startswith('Unnamed') | data.columns.str.startswith('NotSuitable')
+    )]
+
     # Remove nonnumeric values and remove <=0 
-    cleaned_data = data.apply(pd.to_numeric, errors='coerce')
+    cleaned_data = cleaned_data.apply(pd.to_numeric, errors='coerce')
     cleaned_data = cleaned_data[cleaned_data>0]
     # Remove empty columns - this should take care of also columns that might have have negative/all zero values
     cleaned_data = remove_empty_columns(cleaned_data)
-    if data.empty:
+    if cleaned_data.empty:
         return f"Error with the CSV file. There are no valid concentration data. Please, check if your file has the right structure and contains right values."
 
     try:
@@ -363,7 +388,7 @@ def run_calculation(data_path, directory_to_store, out_id, critical_concentratio
         try:
             if debug_file:
                 log_message(debug_file, f"DEBUG (run_calculation): Generating plot for the alpha critical exponent and calculating m (needed for calculating alpha)")
-            m_alpha_critical_exponent_calculation, m_std_alpha_critical_exponent_calculation, error_alpha_critical_exponent_calculation = get_alpha_critical_exponent(concentrations_table_metadata, cleaned_data, critical_concentration, debug_file)
+            m_alpha_critical_exponent_calculation, m_std_alpha_critical_exponent_calculation, error_alpha_critical_exponent_calculation = get_alpha_critical_exponent(concentrations_table_metadata, cleaned_data, critical_concentration, directory_to_store, out_id, debug_file)
         except Exception as e:
             if debug_file:
                 log_message(debug_file, f"DEBUG (run_calculation):  Error while calculating and preparing plot for alpha critical exponent calculation with exception {e}.")
@@ -374,13 +399,12 @@ def run_calculation(data_path, directory_to_store, out_id, critical_concentratio
         try:
             if debug_file:
                 log_message(debug_file, f"DEBUG (run_calculation): Generating plot for the phi critical exponent and calculating phi")
-            phi_phi_critical_exponent_calculation, phi_standard_error_phi_critical_exponent_calculation, error_phi_critical_exponent_calculation = get_phi_critical_exponent_calculation(concentrations_table_metadata, cleaned_data, critical_concentration, ks, debug_file)
+            phi_phi_critical_exponent_calculation, phi_standard_error_phi_critical_exponent_calculation, error_phi_critical_exponent_calculation = get_phi_critical_exponent(concentrations_table_metadata, cleaned_data, critical_concentration, ks, directory_to_store, out_id, debug_file)
         except Exception as e:
             if debug_file:
                 log_message(debug_file, f"DEBUG (run_calculation):  Error while calculating and preparing plot for phi critical exponent calculation with exception {e}.")
             # Return error if any other part of the code fails
             return f"Error while calculating and preparing plot for phi critical exponent calculation. Please, check you data and try again."
-
 
         if error_alpha_critical_exponent_calculation and error_phi_critical_exponent_calculation:
             if debug_file:
@@ -502,4 +526,3 @@ print(result)
 with open(f"{directory_to_store}/{out_id}_get_data_fitness_report_error.txt", "w") as file:
     # Write the string to the file
     file.write(result)
-

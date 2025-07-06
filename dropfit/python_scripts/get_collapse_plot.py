@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import linregress
 from scipy.optimize import curve_fit
 from scipy.stats import gaussian_kde
-from helpers import get_valid_column_indexes, get_collapsed_curve_data, expFunc, remove_empty_columns, log_message
+from helpers import get_valid_column_indexes, get_collapsed_curve_data, expFunc, remove_empty_columns, log_message, is_positive_number, rename_duplicate_columns
 import argparse
 
 def get_collapse_plot(concentrations_table_metadata, cleaned_data, directory_to_store, out_id,  debug_file="", use_kde=True):
@@ -74,6 +74,8 @@ def get_collapse_plot(concentrations_table_metadata, cleaned_data, directory_to_
     plt.legend(loc='upper right', fontsize=16)
     plt.xlim(min_x-axis_padding,max_x+axis_padding)
     plt.savefig(f"{directory_to_store}/{out_id}_collapse_plot.png", dpi=300, bbox_inches='tight')
+    if debug_file:
+                log_message(debug_file, f"DEBUG (get_collapse_plot): Saved collapse plot.")
     return
 
 def run_calculation(data_path, directory_to_store, out_id, concentrations_to_omit = np.array([]), debug_file=""):
@@ -89,6 +91,31 @@ def run_calculation(data_path, directory_to_store, out_id, concentrations_to_omi
     if debug_file:
         log_message(debug_file, f"DEBUG (run_calculation): csv file loaded, with {str(len(data))} rows")
 
+    if data.empty:
+        return f"Error with the CSV file. There are no valid concentration data. Please, check if your file has the right structure and contains right values."
+
+    if debug_file:
+        log_message(debug_file, f"DEBUG (run_calculation): csv file loaded, with {str(len(data))} rows")
+
+    # Load header separately to handle replicates (duplicate column names)
+    with open(data_path, 'r') as f:
+        header = f.readline().strip().split(',')
+    
+    header = [col if col.strip() != '' else 'Unnamed' for col in header]
+
+    # If the header entry (column) is not a number larger than 0, rename it to Unnamed. All column entries should be numbers
+    # since they represent concentrations
+    header = [col if col == 'Unnamed' or is_positive_number(col) else 'Unnamed' for col in header]
+    has_numeric_columns = any(is_positive_number(col) for col in header if col != 'Unnamed')
+    
+    if not has_numeric_columns:
+       return f"Error with the CSV file. There are no valid column headers - no numerical concentrations. Please, check if your file has the right structure and contains right values."
+   
+    header_with_duplicates_handled = rename_duplicate_columns(header)
+    data.columns = header_with_duplicates_handled
+    # Remove all unnamed columns
+    data = data.loc[:, ~data.columns.str.startswith('Unnamed')]
+    
     # Remove nonnumeric values and remove <=0 
     data = data.apply(pd.to_numeric, errors='coerce')
     data = data[data>0]

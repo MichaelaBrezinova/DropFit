@@ -73,6 +73,7 @@ try {
     if (!empty($_POST['concentrationsUsage'])) {
         $usage = json_decode($_POST['concentrationsUsage'], true);
     
+        # Keep concentrations that should be omitted ( the ones that are not in use)
         if (is_array($usage)) {
             $concentrations_to_omit = array_keys(array_filter($usage, function($value) {
                 return $value !== true;

@@ -186,7 +186,6 @@ try {
     ];
 }
 
-// Return the response
 echo json_encode($response);
 exit;
 ?>

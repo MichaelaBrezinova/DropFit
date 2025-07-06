@@ -4,7 +4,7 @@ import sys
 import json
 import argparse
 import pandas as pd
-from helpers import get_valid_column_indexes, linear_function,get_column_kth_moment,round_mean_and_error, remove_empty_columns, log_message
+from helpers import get_valid_column_indexes, linear_function,get_column_kth_moment,round_mean_and_error, remove_empty_columns, log_message,  is_positive_number, rename_duplicate_columns
 import numpy as np
 import matplotlib.pyplot as plt
 import heapq
@@ -52,8 +52,8 @@ def get_plot_data(data, concentrations_table_metadata, k_to_test_for, debug_file
         y_std = np.array(plot_data[k]['y_std'])
         indices_to_replace = (y_std == 0) & (replicates_per_concentration == 1)
         if len(y_std[~indices_to_replace])!=0:
-            replacement_scaler = np.mean(y_std[~indices_to_replace]/np.array(plot_data[k]['y'])[~indices_to_replace])
-            y_std[indices_to_replace] = replacement_scaler * np.array(plot_data[k]['y'])[indices_to_replace]
+            replacement_scaler = np.mean(y_std[~indices_to_replace]/np.abs(np.array(plot_data[k]['y']))[~indices_to_replace])
+            y_std[indices_to_replace] = replacement_scaler * np.abs(np.array(plot_data[k]['y']))[indices_to_replace]
         # in case there are no concentrations with more replicates, set the y_st to 0.001 (small value)
         else:
             replacement_value = 0.001
@@ -202,8 +202,30 @@ def run_calculation(data_path, directory_to_store, out_id, do_k_optim=True, ks=n
         # Return error if loading the CSV file fails
         return f"Error loading the CSV file. Please, check the format of your file."
 
+    if data.empty:
+        return f"Error with the CSV file. There are no valid concentration data. Please, check if your file has the right structure and contains right values."
+
     if debug_file:
         log_message(debug_file, f"DEBUG (run_calculation): csv file loaded, with {str(len(data))} rows")
+
+    # Load header separately to handle replicates (duplicate column names)
+    with open(data_path, 'r') as f:
+        header = f.readline().strip().split(',')
+    
+    header = [col if col.strip() != '' else 'Unnamed' for col in header]
+
+    # If the header entry (column) is not a number larger than 0, rename it to Unnamed. All column entries should be numbers
+    # since they represent concentrations
+    header = [col if col == 'Unnamed' or is_positive_number(col) else 'Unnamed' for col in header]
+    has_numeric_columns = any(is_positive_number(col) for col in header if col != 'Unnamed')
+    
+    if not has_numeric_columns:
+       return f"Error with the CSV file. There are no valid column headers - no numerical concentrations. Please, check if your file has the right structure and contains right values."
+   
+    header_with_duplicates_handled = rename_duplicate_columns(header)
+    data.columns = header_with_duplicates_handled
+    # Remove all unnamed columns
+    data = data.loc[:, ~data.columns.str.startswith('Unnamed')]
 
     # Remove nonnumeric values and remove <=0 
     data = data.apply(pd.to_numeric, errors='coerce')
